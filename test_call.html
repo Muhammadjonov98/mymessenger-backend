@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <title>MyMessenger — Qo'ng'iroq Test</title>
+    <style>
+        body { font-family: Arial; max-width: 700px; margin: 40px auto; padding: 20px; background: #f0f2f5; }
+        .karta { background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h2 { color: #1a1a2e; }
+        .tugma { padding: 10px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; margin: 6px; }
+        .yashil { background: #25D366; color: white; }
+        .qizil { background: #e74c3c; color: white; }
+        .ko-k { background: #3498db; color: white; }
+        .tugma:hover { opacity: 0.85; }
+        #log { height: 200px; overflow-y: auto; background: #1a1a2e; color: #00ff88; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 0.85rem; }
+        video { width: 100%; border-radius: 8px; background: #000; }
+        .video-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; width: 80px; }
+        .holat { font-weight: bold; padding: 8px 16px; border-radius: 20px; display: inline-block; }
+        .ulanmagan { background: #ffebee; color: #e74c3c; }
+        .ulandi { background: #e8f5e9; color: #27ae60; }
+        .qongiroqda { background: #fff3e0; color: #f39c12; }
+    </style>
+</head>
+<body>
+
+<div class="karta">
+    <h2>📞 MyMessenger — Qo'ng'iroq Test</h2>
+
+    <div>
+        <label>Sizning ID:</label>
+        <input type="number" id="user_id" value="1">
+        <button class="tugma yashil" onclick="ulash()">🔌 Ulash</button>
+        <button class="tugma qizil" onclick="uzish()">❌ Uzish</button>
+    </div>
+
+    <div style="margin-top:12px">
+        <span id="holat" class="holat ulanmagan">🔴 Ulanmagan</span>
+    </div>
+</div>
+
+<div class="karta">
+    <h3>📱 Qo'ng'iroq qilish</h3>
+    <label>Kimga (ID):</label>
+    <input type="number" id="receiver_id" value="2">
+    <button class="tugma yashil" onclick="qongiroqBoshlash('ovoz')">📞 Ovozli</button>
+    <button class="tugma ko-k" onclick="qongiroqBoshlash('video')">📹 Video</button>
+    <button class="tugma qizil" onclick="qongiroqTugatish()" id="tugatish_btn" style="display:none">📵 Tugatish</button>
+</div>
+
+<div class="karta" id="kelayotgan_panel" style="display:none">
+    <h3>📲 Qo'ng'iroq kelmoqda...</h3>
+    <p id="kelayotgan_info"></p>
+    <button class="tugma yashil" onclick="qabul_qilish()">✅ Qabul qilish</button>
+    <button class="tugma qizil" onclick="rad_etish()">❌ Rad etish</button>
+</div>
+
+<div class="karta">
+    <h3>🎥 Video</h3>
+    <div class="video-grid">
+        <div>
+            <p>Sizning videongiz:</p>
+            <video id="local_video" autoplay muted playsinline></video>
+        </div>
+        <div>
+            <p>Ikkinchi tomon:</p>
+            <video id="remote_video" autoplay playsinline></video>
+        </div>
+    </div>
+</div>
+
+<div class="karta">
+    <h3>📋 Log</h3>
+    <div id="log"></div>
+</div>
+
+<script>
+    let ws = null;
+    let pc = null;          // RTCPeerConnection
+    let localStream = null; // Mahalliy kamera/mikrofon
+    let callerIdGlobal = null;
+    let currentCallType = null;
+
+    // STUN serverlar — NAT orqali ulanish uchun (Google va Cloudflare)
+    const ICE_SERVERS = {
+        iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+            { urls: "stun:stun.cloudflare.com:3478" }
+        ]
+    };
+
+    function log(matn) {
+        const div = document.getElementById("log");
+        const vaqt = new Date().toLocaleTimeString();
+        div.innerHTML += `[${vaqt}] ${matn}\n`;
+        div.scrollTop = div.scrollHeight;
+    }
+
+    function holatniOzgartirish(holat, matn) {
+        const el = document.getElementById("holat");
+        el.className = "holat " + holat;
+        el.textContent = matn;
+    }
+
+    // Signaling serverga ulanish
+    function ulash() {
+        const userId = document.getElementById("user_id").value;
+        ws = new WebSocket("ws://localhost:8000/calls/ws/" + userId);
+
+        ws.onopen = () => {
+            holatniOzgartirish("ulandi", "🟢 Ulandi (ID: " + userId + ")");
+            log("✅ Signaling serverga ulandi!");
+        };
+
+        ws.onmessage = async (event) => {
+            const signal = JSON.parse(event.data);
+            log("📨 Signal keldi: " + signal.tur);
+
+            if (signal.tur === "kelayotgan_qongiroq") {
+                // Qo'ng'iroq keldi
+                callerIdGlobal = signal.caller_id;
+                currentCallType = signal.qongiroq_turi;
+                document.getElementById("kelayotgan_panel").style.display = "block";
+                document.getElementById("kelayotgan_info").textContent =
+                    `User ${signal.caller_id} dan ${signal.qongiroq_turi} qo'ng'iroq!`;
+                holatniOzgartirish("qongiroqda", "📲 Qo'ng'iroq kelmoqda...");
+
+            } else if (signal.tur === "offer") {
+                // Offer keldi — javob beramiz
+                await offerniQabul(signal);
+
+            } else if (signal.tur === "answer") {
+                // Answer keldi
+                await answerniQabul(signal);
+
+            } else if (signal.tur === "ice") {
+                // ICE candidate keldi
+                if (pc) {
+                    await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                    log("🧊 ICE candidate qo'shildi");
+                }
+
+            } else if (signal.tur === "qabul_qilindi") {
+                log("✅ Qo'ng'iroq qabul qilindi! Ulanish o'rnatilmoqda...");
+                holatniOzgartirish("qongiroqda", "📞 Qo'ng'iroqda...");
+
+            } else if (signal.tur === "rad_etildi") {
+                log("❌ Qo'ng'iroq rad etildi!");
+                qongiroqniTozalash();
+
+            } else if (signal.tur === "tugatildi") {
+                log("📵 Qo'ng'iroq tugadi!");
+                qongiroqniTozalash();
+
+            } else if (signal.tur === "band") {
+                log("📵 Foydalanuvchi band!");
+                holatniOzgartirish("ulandi", "🟢 Ulandi");
+
+            } else if (signal.tur === "xato") {
+                log("❌ Xato: " + signal.xabar);
+            }
+        };
+
+        ws.onclose = () => {
+            holatniOzgartirish("ulanmagan", "🔴 Ulanmagan");
+            log("❌ Ulanish uzildi!");
+        };
+    }
+
+    function uzish() {
+        if (ws) ws.close();
+        qongiroqniTozalash();
+    }
+
+    // Qo'ng'iroq boshlash
+    async function qongiroqBoshlash(tur) {
+        const receiver_id = document.getElementById("receiver_id").value;
+        currentCallType = tur;
+
+        // Kamera/mikrofon ruxsatini so'raymiz
+        try {
+            const constraints = tur === "video"
+                ? { audio: true, video: true }
+                : { audio: true, video: false };
+
+            localStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+            if (tur === "video") {
+                document.getElementById("local_video").srcObject = localStream;
+            }
+
+            log(`📹 ${tur === "video" ? "Kamera va mikrofon" : "Mikrofon"} yoqildi!`);
+        } catch (e) {
+            log("❌ Kamera/mikrofon ruxsati berilmadi: " + e.message);
+            return;
+        }
+
+        // RTCPeerConnection yaratamiz
+        pc = new RTCPeerConnection(ICE_SERVERS);
+
+        // Mahalliy stream ni qo'shamiz
+        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+        // Ikkinchi tomondan video/ovoz kelganda
+        pc.ontrack = (event) => {
+            document.getElementById("remote_video").srcObject = event.streams[0];
+            log("🎥 Ikkinchi tomondan stream keldi!");
+        };
+
+        // ICE candidate topilganda serverga yuboramiz
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                ws.send(JSON.stringify({
+                    tur: "ice",
+                    receiver_id: parseInt(receiver_id),
+                    candidate: event.candidate
+                }));
+            }
+        };
+
+        // Qo'ng'iroq signalini yuboramiz
+        ws.send(JSON.stringify({
+            tur: "qongiroq",
+            receiver_id: parseInt(receiver_id),
+            qongiroq_turi: tur
+        }));
+
+        // Offer yaratamiz
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        ws.send(JSON.stringify({
+            tur: "offer",
+            receiver_id: parseInt(receiver_id),
+            sdp: offer.sdp
+        }));
+
+        document.getElementById("tugatish_btn").style.display = "inline-block";
+        holatniOzgartirish("qongiroqda", "📞 Qo'ng'iroq qilinmoqda...");
+        log(`📞 ${tur} qo'ng'iroq boshlandi -> User ${receiver_id}`);
+    }
+
+    // Offer qabul qilish va answer yuborish
+    async function offerniQabul(signal) {
+        pc = new RTCPeerConnection(ICE_SERVERS);
+
+        pc.ontrack = (event) => {
+            document.getElementById("remote_video").srcObject = event.streams[0];
+            log("🎥 Stream keldi!");
+        };
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                ws.send(JSON.stringify({
+                    tur: "ice",
+                    receiver_id: callerIdGlobal,
+                    candidate: event.candidate
+                }));
+            }
+        };
+
+        if (localStream) {
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+        }
+
+        await pc.setRemoteDescription(new RTCSessionDescription({
+            type: "offer",
+            sdp: signal.sdp
+        }));
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        ws.send(JSON.stringify({
+            tur: "answer",
+            caller_id: callerIdGlobal,
+            sdp: answer.sdp
+        }));
+
+        log("📤 Answer yuborildi!");
+    }
+
+    // Answer qabul qilish
+    async function answerniQabul(signal) {
+        if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription({
+                type: "answer",
+                sdp: signal.sdp
+            }));
+            log("✅ WebRTC ulanish o'rnatildi!");
+        }
+    }
+
+    // Qo'ng'iroqni qabul qilish
+    async function qabul_qilish() {
+        document.getElementById("kelayotgan_panel").style.display = "none";
+
+        try {
+            const constraints = currentCallType === "video"
+                ? { audio: true, video: true }
+                : { audio: true, video: false };
+
+            localStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+            if (currentCallType === "video") {
+                document.getElementById("local_video").srcObject = localStream;
+            }
+        } catch (e) {
+            log("❌ Kamera/mikrofon ruxsati: " + e.message);
+        }
+
+        ws.send(JSON.stringify({
+            tur: "qabul",
+            caller_id: callerIdGlobal
+        }));
+
+        document.getElementById("tugatish_btn").style.display = "inline-block";
+        holatniOzgartirish("qongiroqda", "📞 Qo'ng'iroqda...");
+        log("✅ Qo'ng'iroq qabul qilindi!");
+    }
+
+    // Rad etish
+    function rad_etish() {
+        document.getElementById("kelayotgan_panel").style.display = "none";
+        ws.send(JSON.stringify({ tur: "rad", caller_id: callerIdGlobal }));
+        holatniOzgartirish("ulandi", "🟢 Ulandi");
+        log("❌ Qo'ng'iroq rad etildi!");
+    }
+
+    // Qo'ng'iroqni tugatish
+    function qongiroqTugatish() {
+        const receiver_id = document.getElementById("receiver_id").value;
+        ws.send(JSON.stringify({
+            tur: "tugatish",
+            receiver_id: parseInt(receiver_id)
+        }));
+        qongiroqniTozalash();
+        log("📵 Qo'ng'iroq tugadi!");
+    }
+
+    // Tozalash
+    function qongiroqniTozalash() {
+        if (pc) { pc.close(); pc = null; }
+        if (localStream) {
+            localStream.getTracks().forEach(t => t.stop());
+            localStream = null;
+        }
+        document.getElementById("local_video").srcObject = null;
+        document.getElementById("remote_video").srcObject = null;
+        document.getElementById("tugatish_btn").style.display = "none";
+        document.getElementById("kelayotgan_panel").style.display = "none";
+        holatniOzgartirish("ulandi", "🟢 Ulandi");
+        callerIdGlobal = null;
+    }
+</script>
+
+</body>
+</html>

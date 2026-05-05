@@ -1,0 +1,41 @@
+# ==========================================
+# МОДЕЛИ БАЗЫ ДАННЫХ
+# SQLAlchemy ORM модели для всех таблиц
+# ==========================================
+
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy.orm import relationship
+from datetime import datetime, timezone
+from database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    full_name = Column(String, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # Связи с сообщениями
+    sent_messages = relationship("Message", foreign_keys="Message.sender_id", back_populates="sender")
+    received_messages = relationship("Message", foreign_keys="Message.receiver_id", back_populates="receiver")
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(Text, nullable=False, default="")
+    file_url = Column(String, nullable=True)
+    file_type = Column(String, nullable=True)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # Связи с пользователями
+    sender = relationship("User", foreign_keys=[sender_id], back_populates="sent_messages")
+    receiver = relationship("User", foreign_keys=[receiver_id], back_populates="received_messages")

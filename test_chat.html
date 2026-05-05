@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <title>MyMessenger — Test Chat</title>
+    <style>
+        body { font-family: Arial; max-width: 600px; margin: 40px auto; padding: 20px; }
+        #messages { height: 300px; border: 1px solid #ccc; overflow-y: auto; padding: 10px; margin-bottom: 10px; border-radius: 8px; }
+        .xabar { padding: 6px 10px; margin: 4px 0; border-radius: 8px; }
+        .men { background: #dcf8c6; text-align: right; }
+        .boshqa { background: #f0f0f0; }
+        .xato { background: #ffcccc; }
+        .tizim { background: #fff3cd; text-align: center; font-size: 0.85em; }
+        input, button, select { padding: 8px; margin: 4px; border-radius: 6px; border: 1px solid #ccc; }
+        button { background: #25D366; color: white; border: none; cursor: pointer; }
+        button:hover { background: #128C7E; }
+        #holat { font-weight: bold; margin: 10px 0; }
+    </style>
+</head>
+<body>
+
+<h2>MyMessenger — Test Chat</h2>
+
+<div>
+    <label>Sizning ID ingiz:</label>
+    <input type="number" id="user_id" value="1" min="1" style="width:60px">
+    <button onclick="ulash()">Ulash</button>
+    <button onclick="uzish()" style="background:#e74c3c">Uzish</button>
+</div>
+
+<div id="holat">Ulanmagan</div>
+
+<div id="messages"></div>
+
+<div>
+    <label>Kimga (ID):</label>
+    <input type="number" id="receiver_id" value="2" min="1" style="width:60px">
+    <input type="text" id="content" placeholder="Xabaringizni yozing..." style="width:300px">
+    <button onclick="yuborish()">Yuborish</button>
+</div>
+
+<script>
+    // WebSocket obyekti — global
+    let ws = null;
+
+    // Xabar oynasiga yozish funksiyasi
+    function xabarQoshish(matn, tur) {
+        const div = document.getElementById("messages");
+        const p = document.createElement("p");
+        p.className = "xabar " + tur;
+        p.textContent = matn;
+        div.appendChild(p);
+        // Avtomatik pastga scroll
+        div.scrollTop = div.scrollHeight;
+    }
+
+    // WebSocket ga ulanish funksiyasi
+    function ulash() {
+        const userId = document.getElementById("user_id").value;
+
+        if (!userId) {
+            alert("ID ni kiriting!");
+            return;
+        }
+
+        // Eski ulanish bo'lsa yopamiz
+        if (ws) {
+            ws.close();
+        }
+
+        // Serverga WebSocket ulanish ochamiz
+        ws = new WebSocket("ws://localhost:8000/ws/" + userId);
+
+        // Ulanish muvaffaqiyatli ochilganda
+        ws.onopen = function() {
+            document.getElementById("holat").textContent = "Ulandi! (Siz: ID " + userId + ")";
+            document.getElementById("holat").style.color = "green";
+            xabarQoshish("ID " + userId + " sifatida ulandi!", "tizim");
+        };
+
+        // Serverdan xabar kelganda
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+
+            if (data.xato) {
+                // Xato xabari keldi
+                xabarQoshish("Xato: " + data.xato, "xato");
+            } else if (data.sender_id == userId) {
+                // O'zim yuborgan xabar tasdiqlandi
+                xabarQoshish("Men -> ID" + data.receiver_id + ": " + data.content + " [" + data.status + "]", "men");
+            } else {
+                // Boshqa foydalanuvchidan xabar keldi
+                xabarQoshish("ID" + data.sender_id + " -> Men: " + data.content, "boshqa");
+            }
+        };
+
+        // Ulanish uzilganda
+        ws.onclose = function() {
+            document.getElementById("holat").textContent = "Ulanmagan";
+            document.getElementById("holat").style.color = "red";
+            xabarQoshish("Ulanish uzildi!", "xato");
+        };
+
+        // Xato bo'lganda
+        ws.onerror = function() {
+            xabarQoshish("WebSocket xatosi!", "xato");
+        };
+    }
+
+    // Ulanishni uzish funksiyasi
+    function uzish() {
+        if (ws) {
+            ws.close();
+            ws = null;
+        }
+    }
+
+    // Xabar yuborish funksiyasi
+    function yuborish() {
+        // Ulanish yo'q bo'lsa ogohlantiramiz
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            alert("Avval ulaning!");
+            return;
+        }
+
+        const receiver_id = document.getElementById("receiver_id").value;
+        const content = document.getElementById("content").value.trim();
+
+        // Bo'sh xabar yubormaslik
+        if (!content) {
+            alert("Xabar bo'sh bo'lmasin!");
+            return;
+        }
+
+        // Serverga JSON formatida yuboramiz
+        ws.send(JSON.stringify({
+            receiver_id: parseInt(receiver_id),
+            content: content
+        }));
+
+        // Input maydonini tozalaymiz
+        document.getElementById("content").value = "";
+    }
+
+    // Enter tugmasi bosilganda xabar yuborish
+    document.getElementById("content").addEventListener("keypress", function(e) {
+        if (e.key === "Enter") {
+            yuborish();
+        }
+    });
+</script>
+
+</body>
+</html>
