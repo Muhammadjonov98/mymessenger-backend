@@ -3,10 +3,19 @@
 # SQLAlchemy ORM модели для всех таблиц
 # ==========================================
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from database import Base
+import enum
+
+
+class FileTypeEnum(str, enum.Enum):
+    """Fayl turlari"""
+    IMAGE = "rasm"
+    VIDEO = "video"
+    DOCUMENT = "hujjat"
+    VOICE = "ovoz"
 
 
 class User(Base):
@@ -32,7 +41,7 @@ class Message(Base):
     receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     content = Column(Text, nullable=False, default="")
     file_url = Column(String, nullable=True)
-    file_type = Column(String, nullable=True)
+    file_type = Column(Enum(FileTypeEnum), nullable=True)
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
